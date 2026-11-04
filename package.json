@@ -1,0 +1,17 @@
+{
+  "name": "incentify-erp-v10-github",
+  "private": true,
+  "version": "10.0.0",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "node scripts/build-v10.js",
+    "build:production": "node scripts/build-v10.js",
+    "verify": "node scripts/verify-v10.js",
+    "test:deploy": "node scripts/test-deployment.js",
+    "verify:all": "npm run verify && npm run build && npm run test:deploy",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}
