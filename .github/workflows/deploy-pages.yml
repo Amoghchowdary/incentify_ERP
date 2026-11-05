@@ -1,44 +1,46 @@
-﻿name: Deploy INCENTIFY ERP V10.2
-
+name: Deploy INCENTIFY ERP V12 (GitHub frontend only)
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
   pages: write
   id-token: write
-
 concurrency:
-  group: github-pages
+  group: pages
   cancel-in-progress: false
-
 jobs:
-  deploy:
+  release:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
+      url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - name: Checkout repository
+      - name: Checkout Amogh GitHub frontend
         uses: actions/checkout@v4
-
-      - name: Prepare V10.2 redirect website
-        run: |
-          mkdir -p public
-          cp index.html admin-login.html sales-login.html erp.html admin.html 404.html public/
-          touch public/.nojekyll
-
-      - name: Configure GitHub Pages
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify V12 source and transport
+        run: npm run verify && npm run test:gateway
+      - name: Build V12 GitHub Pages app
+        env:
+          INCENTIFY_ERP_API_URL: ${{ vars.INCENTIFY_ERP_API_URL }}
+        run: npm run build
+      - name: Check build excludes backend files
+        run: npm run test:deploy
+      - name: Require live INCENTIFY-admin V12 backend before publishing
+        env:
+          INCENTIFY_ERP_API_URL: ${{ vars.INCENTIFY_ERP_API_URL }}
+        run: node scripts/check-live-backend-v12.js
+      - name: Configure Pages
         uses: actions/configure-pages@v5
-
-      - name: Upload website
+      - name: Upload frontend artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: ./public
-
-      - name: Deploy website
-        id: deployment
+          path: ./dist
+      - name: Publish frontend
+        id: deploy
         uses: actions/deploy-pages@v4

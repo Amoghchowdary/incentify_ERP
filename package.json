@@ -1,17 +1,17 @@
 {
-  "name": "incentify-erp-v10-github",
+  "name": "incentify-erp-v12-github",
+  "version": "12.0.0",
   "private": true,
-  "version": "10.0.0",
+  "description": "INCENTIFY ERP V12: Github Pages frontend and admin Apps Script backend",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5173",
-    "build": "node scripts/build-v10.js",
-    "build:production": "node scripts/build-v10.js",
-    "verify": "node scripts/verify-v10.js",
-    "test:deploy": "node scripts/test-deployment.js",
-    "verify:all": "npm run verify && npm run build && npm run test:deploy",
-    "preview": "vite preview --host 127.0.0.1"
+    "verify": "node scripts/verify-v12.js",
+    "build": "node scripts/build-v12.js",
+    "build:production": "node scripts/build-v12.js",
+    "test:deploy": "node scripts/test-deployment-v12.js",
+    "test:gateway": "node scripts/test-gateway-v12.js",
+    "preflight": "npm run verify && npm run test:gateway && npm run build && npm run test:deploy"
   },
-  "devDependencies": {
-    "vite": "^6.3.5"
+  "engines": {
+    "node": ">=20"
   }
 }
