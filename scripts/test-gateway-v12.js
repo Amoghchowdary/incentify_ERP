@@ -1,39 +1,104 @@
-/* Simulator for Code.js-generated gateway + Github frontend's MessageChannel. */
+/* GitHub-safe V12 transport contract test. No private Apps Script code required. */
 'use strict';
-const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const root=path.resolve(__dirname,'..','..');
-const code=fs.readFileSync(path.join(root,'Apps_Script_ADMIN_ONLY','Code.js'),'utf8');
-const client=fs.readFileSync(path.join(__dirname,'..','js','v12-gateway.js'),'utf8');
-const props={getProperty:(key)=>key==='V94_ACTIVE_SLOT'?'A':key==='V5_DB_ID'?'TEST_DB':null};
-const html={XFrameOptionsMode:{ALLOWALL:'ALLOWALL'},createHtmlOutput(s){return {getContent:()=>s,setXFrameOptionsMode(){return this}}}};
-const content={MimeType:{JSON:'JSON'},createTextOutput(s){return {getContent:()=>s,setMimeType(){return this}}}};
-const ctx=vm.createContext({console,HtmlService:html,ContentService:content,PropertiesService:{getScriptProperties:()=>props},SpreadsheetApp:{openById:()=>({getSheetByName:()=>({})})},Logger:{log(){}},Date,JSON,Math,Set,Map,RegExp,Error});
-vm.runInContext(code,ctx);vm.runInContext('isInitialized_=()=>true',ctx);
-const health=JSON.parse(ctx.doGet({parameter:{health:'1'}}).getContent());
-if(health.version!=='12.0.0'||health.status!=='ONLINE'||health.transport!=='HTML_SERVICE_MESSAGE_PORT')throw Error('Health mismatch');
-let bad=ctx.doGet({parameter:{gateway:'1',origin:'https://attacker.example',channel:'abcdefghijklmnopqrstuvwxyz123456'}}).getContent();
-if(!bad.includes('denied'))throw Error('Host allowlist bypass');
-bad=ctx.doGet({parameter:{gateway:'1',origin:'https://amoghchowdary.github.io',channel:'bad'}}).getContent();
-if(!bad.includes('denied'))throw Error('Invalid channel bypass');
-const valid=ctx.doGet({parameter:{gateway:'1',origin:'https://amoghchowdary.github.io',channel:'abcdef0123456789abcdef0123456789'}}).getContent();
-const script=valid.match(/<script>([\s\S]*?)<\/script>/);
-if(!script)throw Error('Gateway generated script missing');new vm.Script(script[1]);
-class Port {constructor(){this.onmessage=null;this.peer=null}postMessage(msg){const peer=this.peer;if(peer&&peer.onmessage)queueMicrotask(()=>peer.onmessage({data:msg}))}start(){}close(){}}
-class Channel {constructor(){this.port1=new Port();this.port2=new Port();this.port1.peer=this.port2;this.port2.peer=this.port1}}
-const listeners={};const nodes=[];
-const page={location:{origin:'https://amoghchowdary.github.io'}};
-const windowObj={INCENTIFY_CONFIG:{API_URL:'https://script.google.com/macros/s/ABCDE12345/exec'},addEventListener(type,fn){listeners[type]=fn},removeEventListener(){}};
-const document={body:{appendChild(node){nodes.push(node);setImmediate(()=>{
-  const u=new URL(node.src);const h=ctx.doGet({parameter:Object.fromEntries(u.searchParams)}).getContent();const m=h.match(/<script>([\s\S]*?)<\/script>/);if(!m)throw Error('HTML gate invalid');
-  const serverPage={top:{postMessage(data,origin,ports){if(origin!=='https://amoghchowdary.github.io')throw Error('Wrong destination origin');listeners.message({data,origin:'https://n-abc-script.googleusercontent.com',ports})}}};
-  const run={withSuccessHandler(fn){this.success=fn;return this},withFailureHandler(fn){this.fail=fn;return this},v12GatewayCall(req){setImmediate(()=>this.success({success:true,action:req.action,version:'12.0.0'}))}};
-  vm.runInNewContext(m[1],{window:serverPage,google:{script:{run}},MessageChannel:Channel,console,setInterval,clearInterval});
- })},},createElement(tag){return {tag,style:{},setAttribute(){},remove(){}}},documentElement:{appendChild(){}}};
-windowObj.location=page.location;
-vm.runInNewContext(client,{window:windowObj,globalThis:{crypto:{randomUUID:()=> '12345678-1234-1234-1234-123456789abc'}},crypto:{randomUUID:()=> '12345678-1234-1234-1234-123456789abc'},document,location:page.location,URL,setTimeout,clearTimeout,console});
-(async()=>{
- await windowObj.incentifyApi.waitReady(5000);
- const reply=await windowObj.incentifyApi.call('health',{},5000);
- if(!reply.success||reply.action!=='health'||reply.version!=='12.0.0')throw Error('Roundtrip failed');
- console.log('PASS V12 backend gateway: restricted origin, valid message port, app-protocol roundtrip.');
-})().catch(e=>{console.error(e);process.exitCode=1});
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'v12-gateway.js'), 'utf8');
+new vm.Script(source, { filename: 'v12-gateway.js' });
+for (const protocol of ['INCENTIFY_V12_READY', 'INCENTIFY_V12_ACK', 'INCENTIFY_V12_ACKED', 'INCENTIFY_V12_REQUEST', 'INCENTIFY_V12_RESPONSE']) {
+  assert.ok(source.includes(protocol), `Missing gateway protocol message: ${protocol}`);
+}
+
+class Port {
+  constructor() { this.onmessage = null; this.peer = null; this.closed = false; }
+  postMessage(data) {
+    if (this.closed) throw new Error('Port closed');
+    const target = this.peer;
+    queueMicrotask(() => { if (!target.closed && target.onmessage) target.onmessage({ data }); });
+  }
+  start() {}
+  close() { this.closed = true; }
+}
+function pair() {
+  const frontend = new Port(), server = new Port();
+  frontend.peer = server; server.peer = frontend;
+  return { frontend, server };
+}
+const listeners = new Map();
+const frames = [];
+const location = { origin: 'https://amoghchowdary.github.io' };
+const windowObj = {
+  INCENTIFY_CONFIG: { API_URL: 'https://script.google.com/macros/s/TEST_V12_ENDPOINT/exec' },
+  addEventListener(type, handler) { listeners.set(type, handler); },
+  removeEventListener(type) { listeners.delete(type); }
+};
+const document = {
+  createElement(tag) {
+    assert.equal(tag, 'iframe');
+    return { tag, style: {}, setAttribute() {}, remove() {} };
+  },
+  body: { appendChild(frame) { frames.push(frame); } },
+  documentElement: { appendChild(frame) { frames.push(frame); } }
+};
+const browser = vm.createContext({
+  window: windowObj, document, location, URL, setTimeout, clearTimeout,
+  crypto: { randomUUID: () => 'abcdef01-2345-6789-abcd-ef0123456789' },
+  console, Promise, Map, Error, Math, Date
+});
+vm.runInContext(source, browser);
+const gateway = windowObj.incentifyApi;
+assert.ok(gateway, 'Gateway should initialize');
+assert.equal(frames.length, 1, 'Gateway should mount exactly one iframe');
+const iframeUrl = new URL(frames[0].src);
+assert.equal(iframeUrl.origin, 'https://script.google.com');
+assert.equal(iframeUrl.searchParams.get('gateway'), '1');
+assert.equal(iframeUrl.searchParams.get('origin'), location.origin);
+const channel = iframeUrl.searchParams.get('channel');
+assert.match(channel, /^[A-Za-z0-9_-]{24,}$/);
+
+function message(origin, data, ports = []) {
+  const handler = listeners.get('message');
+  assert.equal(typeof handler, 'function');
+  handler({ origin, data, ports });
+}
+(async () => {
+  const hostile = pair();
+  let hostileAck = false;
+  hostile.server.onmessage = () => { hostileAck = true; };
+  message('https://evil.example', { type: 'INCENTIFY_V12_READY', channel }, [hostile.frontend]);
+  message('https://n-sandbox-script.googleusercontent.com', { type: 'INCENTIFY_V12_READY', channel: 'wrong-channel' }, [hostile.frontend]);
+  message('https://n-sandbox-script.googleusercontent.com', { type: 'INCENTIFY_V12_READY', channel }, []);
+  await Promise.resolve();
+  assert.equal(gateway.ready, false, 'Untrusted/invalid handshake must be rejected');
+  assert.equal(hostileAck, false, 'Untrusted port must never receive an ACK');
+
+  const trusted = pair();
+  trusted.server.onmessage = ({ data }) => {
+    if (data.type === 'INCENTIFY_V12_ACK') {
+      assert.equal(data.channel, channel);
+      trusted.server.postMessage({ type: 'INCENTIFY_V12_ACKED', channel });
+    } else if (data.type === 'INCENTIFY_V12_REQUEST') {
+      assert.equal(data.channel, channel);
+      if (data.request.action === 'health') {
+        trusted.server.postMessage({ type: 'INCENTIFY_V12_RESPONSE', channel, id: data.id, result: { success: true, version: '12.0.0', status: 'ONLINE' } });
+      } else if (data.request.action === 'restricted') {
+        trusted.server.postMessage({ type: 'INCENTIFY_V12_RESPONSE', channel, id: data.id, result: { success: false, error: 'ACCESS_DENIED', message: 'Permission denied' } });
+      }
+    }
+  };
+  message('https://n-sandbox-script.googleusercontent.com', { type: 'INCENTIFY_V12_READY', channel }, [trusted.frontend]);
+  await gateway.waitReady(1000);
+  assert.equal(gateway.ready, true, 'Valid Google origin and channel must complete handshake');
+  const result = await gateway.call('health', {}, 1000);
+  assert.equal(result.version, '12.0.0');
+  assert.equal(result.status, 'ONLINE');
+  await assert.rejects(gateway.call('restricted', {}, 1000), err => err.code === 'ACCESS_DENIED');
+  await assert.rejects(gateway.call('silent', {}, 20), /Backend request timed out/);
+  assert.equal(gateway.pending.size, 0, 'Completed and timed-out requests must be cleaned up');
+  gateway.destroy();
+  assert.equal(listeners.has('message'), false, 'Destroy should remove message listener');
+  console.log('PASS V12 frontend-only gateway contract: iframe URL, origin/channel checks, port ACK, API response/error, timeout and cleanup.');
+  console.log('NOTE Actual INCENTIFY-admin Code.js is tested separately; CI live backend gate remains mandatory.');
+})().catch(err => { console.error(err); process.exitCode = 1; });
