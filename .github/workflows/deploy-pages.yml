@@ -1,48 +1,44 @@
-name: Deploy INCENTIFY ERP V10 to GitHub Pages
+﻿name: Deploy INCENTIFY ERP V10.2
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
 permissions:
   contents: read
+  pages: write
+  id-token: write
+
 concurrency:
-  group: "pages"
+  group: github-pages
   cancel-in-progress: false
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out website source
-        uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Verify approved frontend
-        run: npm run verify
-      - name: Build live web application (no preview fallback)
-        env:
-          INCENTIFY_BACKEND_MODE: live
-          INCENTIFY_ERP_API_URL: ${{ vars.INCENTIFY_ERP_API_URL }}
-        run: npm run build:production
-      - name: Verify the published artifact
-        run: npm run test:deploy
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-      - name: Upload website artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: ./dist
   deploy:
-    needs: build
-    permissions:
-      pages: write
-      id-token: write
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+
     steps:
-      - name: Deploy GitHub Pages
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare V10.2 redirect website
+        run: |
+          mkdir -p public
+          cp index.html admin-login.html sales-login.html erp.html admin.html 404.html public/
+          touch public/.nojekyll
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload website
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./public
+
+      - name: Deploy website
         id: deployment
         uses: actions/deploy-pages@v4
